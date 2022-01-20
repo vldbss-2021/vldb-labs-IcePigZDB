@@ -101,6 +101,7 @@ project4c:
 clean:
 	rm /tmp/test-raftstore* -rf
 
+lab1: lab1P0 lab1P1a lab1P1b lab1P2a lab1P2b lab1P3a lab1P3b lab1P4a lab1P4b
 ###
 # The lab1 related tests. It's better to pass the part "a" tests and then try to
 # run the part "b" tests, as the part "a" tests are common path test without
@@ -139,6 +140,7 @@ lab1P4a:
 lab1P4b:
 	$(GOTEST) ./kv/test_raftstore -run Lab1P4b
 
+lab2: lab2P1 lab2P2 lab2P3 lab2P4
 ###
 # The lab2 related tests.
 lab2P1:
