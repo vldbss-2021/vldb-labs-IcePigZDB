@@ -4,3 +4,5 @@ node/node
 unikv/unikv
 bin/*
 _tools
+
+vendor/
