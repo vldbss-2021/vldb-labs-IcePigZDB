@@ -31,12 +31,16 @@ func (c *CheckTxnStatus) PrepareWrites(txn *mvcc.MvccTxn) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	panic("CheckTxnStatus is not implemented yet")
 	if lock != nil && lock.Ts == txn.StartTS {
 		if physical(lock.Ts)+lock.Ttl < physical(c.request.CurrentTs) {
 			// YOUR CODE HERE (lab2).
 			// Lock has expired, try to rollback it. `mvcc.WriteKindRollback` could be used to
 			// represent the type. Try using the interfaces provided by `mvcc.MvccTxn`.
+			txn.DeleteLock(key)
+			// TestCheckTxnStatusTtlExpired4C
+			txn.DeleteValue(key)
+			txn.PutWrite(key, txn.StartTS, &mvcc.Write{StartTS: txn.StartTS, Kind: mvcc.WriteKindRollback})
+			response.Action = kvrpcpb.Action_TTLExpireRollback
 			log.Info("checkTxnStatus rollback the primary lock as it's expired",
 				zap.Uint64("lock.TS", lock.Ts),
 				zap.Uint64("physical(lock.TS)", physical(lock.Ts)),
@@ -56,13 +60,14 @@ func (c *CheckTxnStatus) PrepareWrites(txn *mvcc.MvccTxn) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	panic("CheckTxnStatus is not implemented yet")
 	if existingWrite == nil {
 		// YOUR CODE HERE (lab2).
 		// The lock never existed, it's still needed to put a rollback record on it so that
 		// the stale transaction commands such as prewrite on the key will fail.
 		// Note try to set correct `response.Action`,
 		// the action types could be found in kvrpcpb.Action_xxx.
+		txn.PutWrite(key, txn.StartTS, &mvcc.Write{StartTS: txn.StartTS, Kind: mvcc.WriteKindRollback})
+		response.Action = kvrpcpb.Action_LockNotExistRollback
 
 		return response, nil
 	}
