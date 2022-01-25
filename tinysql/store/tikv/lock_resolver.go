@@ -299,7 +299,14 @@ func (lr *LockResolver) getTxnStatus(bo *Backoffer, txnID uint64, primary []byte
 	var req *tikvrpc.Request
 	// build the request
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	txnStatusReq := &kvrpcpb.CheckTxnStatusRequest{
+		PrimaryKey: primary,
+		// TODO: why? TestResolveLock
+		LockTs:    txnID,
+		CurrentTs: currentTS,
+	}
+	req = tikvrpc.NewRequest(tikvrpc.CmdCheckTxnStatus, txnStatusReq, kvrpcpb.Context{})
+
 	for {
 		loc, err := lr.store.GetRegionCache().LocateKey(bo, primary)
 		if err != nil {
@@ -327,7 +334,9 @@ func (lr *LockResolver) getTxnStatus(bo *Backoffer, txnID uint64, primary []byte
 		logutil.BgLogger().Debug("cmdResp", zap.Bool("nil", cmdResp == nil))
 		// Assign status with response
 		// YOUR CODE HERE (lab3).
-		panic("YOUR CODE HERE")
+		status.action = cmdResp.GetAction()
+		status.commitTS = cmdResp.GetCommitVersion()
+		status.ttl = cmdResp.GetLockTtl()
 		return status, nil
 	}
 }
@@ -350,7 +359,12 @@ func (lr *LockResolver) resolveLock(bo *Backoffer, l *Lock, status TxnStatus, cl
 
 		// build the request
 		// YOUR CODE HERE (lab3).
-		panic("YOUR CODE HERE")
+		resolveLockReq := &kvrpcpb.ResolveLockRequest{
+			// TODO: why? TestResolveLock
+			StartVersion:  l.TxnID,
+			CommitVersion: status.commitTS,
+		}
+		req = tikvrpc.NewRequest(tikvrpc.CmdResolveLock, resolveLockReq, kvrpcpb.Context{})
 
 		resp, err := lr.store.SendReq(bo, req, loc.Region, readTimeoutShort)
 		if err != nil {

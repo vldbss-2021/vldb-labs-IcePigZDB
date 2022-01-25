@@ -106,8 +106,8 @@ var (
 type Retriever interface {
 	// Get gets the value for key k from kv store.
 	// If corresponding kv pair does not exist, it returns nil and ErrNotExist.
-	Get(ctx context.Context, k Key) ([]byte, error)
 	// Iter creates an Iterator positioned on the first entry that k <= entry's key.
+	Get(ctx context.Context, k Key) ([]byte, error)
 	// If such entry is not found, it returns an invalid Iterator with no error.
 	// It yields only keys that < upperBound. If upperBound is nil, it means the upperBound is unbounded.
 	// The Iterator must be Closed after use.

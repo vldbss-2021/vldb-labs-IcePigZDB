@@ -21,9 +21,11 @@ import (
 	"time"
 
 	pb "github.com/pingcap-incubator/tinykv/proto/pkg/kvrpcpb"
+	"github.com/pingcap-incubator/tinykv/proto/pkg/metapb"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/logutil"
@@ -132,15 +134,32 @@ func (c *twoPhaseCommitter) initKeysAndMutations() error {
 		if len(v) > 0 {
 			// `len(v) > 0` means it's a put operation.
 			// YOUR CODE HERE (lab3).
-			panic("YOUR CODE HERE")
+			mutation := &mutationEx{
+				pb.Mutation{
+					Op:    pb.Op_Put,
+					Key:   k.Clone(),
+					Value: v,
+				},
+			}
+			mutations[string(k)] = mutation
+			putCnt++
+			size += len(k) + len(v)
 		} else {
 			// `len(v) == 0` means it's a delete operation.
 			// YOUR CODE HERE (lab3).
-			panic("YOUR CODE HERE")
+			mutation := &mutationEx{
+				pb.Mutation{
+					Op:  pb.Op_Del,
+					Key: k.Clone(),
+				},
+			}
+			mutations[string(k)] = mutation
+			delCnt++
+			size += len(k)
 		}
 		// Update the keys array and statistic information
 		// YOUR CODE HERE (lab3).
-		panic("YOUR CODE HERE")
+		keys = append(keys, k)
 		return nil
 	})
 	if err != nil {
@@ -154,7 +173,16 @@ func (c *twoPhaseCommitter) initKeysAndMutations() error {
 		// YOUR CODE HERE (lab3).
 		_, ok := mutations[string(lockKey)]
 		if !ok {
-			panic("YOUR CODE HERE")
+			mutation := &mutationEx{
+				pb.Mutation{
+					Op:  pb.Op_Lock,
+					Key: lockKey,
+				},
+			}
+			mutations[string(lockKey)] = mutation
+			keys = append(keys, lockKey)
+			lockCnt++
+			size += len(lockKey)
 		}
 	}
 	if len(keys) == 0 {
@@ -344,7 +372,28 @@ func (c *twoPhaseCommitter) buildPrewriteRequest(batch batchKeys) *tikvrpc.Reque
 	// Build the prewrite request from the input batch,
 	// should use `twoPhaseCommitter.primary` to ensure that the primary key is not empty.
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	// TODO no setter found for it
+	if c.primary() == nil {
+		return nil
+	}
+	mutations := make([]*pb.Mutation, 0, len(batch.keys))
+	for _, key := range batch.keys {
+		mutations = append(mutations, &c.mutations[string(key)].Mutation)
+	}
+
+	req = &pb.PrewriteRequest{
+		Mutations: mutations,
+		Context: &pb.Context{
+			RegionId: batch.region.id,
+			RegionEpoch: &metapb.RegionEpoch{
+				ConfVer: batch.region.confVer,
+				Version: batch.region.ver,
+			},
+		},
+		PrimaryLock:  c.primary(),
+		StartVersion: c.startTS,
+		LockTtl:      c.lockTTL,
+	}
 	return tikvrpc.NewRequest(tikvrpc.CmdPrewrite, req, pb.Context{})
 }
 
@@ -429,7 +478,16 @@ func (actionCommit) handleSingleBatch(c *twoPhaseCommitter, bo *Backoffer, batch
 	sender := NewRegionRequestSender(c.store.regionCache, c.store.client)
 	// build and send the commit request
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	commitReq := &pb.CommitRequest{
+		StartVersion:  c.startTS,
+		Keys:          batch.keys,
+		CommitVersion: c.commitTS,
+	}
+	req := tikvrpc.NewRequest(tikvrpc.CmdCommit, commitReq, pb.Context{})
+	resp, err = sender.SendReq(bo, req, batch.region, readTimeoutShort)
+	if err != nil {
+		return errors.Trace(err)
+	}
 	logutil.BgLogger().Debug("actionCommit handleSingleBatch", zap.Bool("nil response", resp == nil))
 
 	// If we fail to receive response for the request that commits primary key, it will be undetermined whether this
@@ -453,8 +511,27 @@ func (actionCommit) handleSingleBatch(c *twoPhaseCommitter, bo *Backoffer, batch
 
 	// handle the response and error refer to actionPrewrite.handleSingleBatch
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	regionErr, err := resp.GetRegionError()
+	if err != nil {
+		return errors.Trace(err)
+	}
+	if regionErr != nil {
+		// The region info is read from region cache,
+		// so the cache miss cases should be considered
+		// You need to handle region errors here
+		err = bo.Backoff(BoRegionMiss, errors.New(regionErr.String()))
+		if err != nil {
+			return errors.Trace(err)
+		}
+		return terror.ErrResultUndetermined
+	}
 
+	commitResp := resp.Resp.(*pb.CommitResponse)
+	keyErr := commitResp.GetError()
+	if keyErr != nil {
+		err = extractKeyErr(keyErr)
+		return errors.Trace(err)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// Group that contains primary key is always the first.
@@ -468,11 +545,26 @@ func (actionCleanup) handleSingleBatch(c *twoPhaseCommitter, bo *Backoffer, batc
 
 	// build and send the rollback request
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
-
+	var resp *tikvrpc.Response
+	var err error
+	sender := NewRegionRequestSender(c.store.regionCache, c.store.client)
+	rollbackReq := &pb.BatchRollbackRequest{
+		StartVersion: c.startTS,
+		Keys:         batch.keys,
+	}
+	req := tikvrpc.NewRequest(tikvrpc.CmdBatchRollback, rollbackReq, pb.Context{})
+	resp, err = sender.SendReq(bo, req, batch.region, readTimeoutShort)
+	if err != nil {
+		return errors.Trace(err)
+	}
 	// handle the response and error refer to actionPrewrite.handleSingleBatch
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	rollbackResp := resp.Resp.(*pb.BatchRollbackResponse)
+	keyErr := rollbackResp.GetError()
+	if keyErr != nil {
+		err = extractKeyErr(keyErr)
+		return errors.Trace(err)
+	}
 	return nil
 }
 
@@ -518,7 +610,8 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 				logutil.BgLogger().Debug("cleanupBo", zap.Bool("nil", cleanupBo == nil))
 				// cleanup phase
 				// YOUR CODE HERE (lab3).
-				panic("YOUR CODE HERE")
+				// TODO how to process this err?
+				err = c.cleanupKeys(cleanupBo, c.keys)
 				c.cleanWg.Done()
 			}()
 		}
@@ -529,7 +622,10 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 	prewriteBo := NewBackoffer(ctx, PrewriteMaxBackoff).WithVars(c.txn.vars)
 	logutil.BgLogger().Debug("prewriteBo", zap.Bool("nil", prewriteBo == nil))
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	err = c.prewriteKeys(prewriteBo, c.keys)
+	if err != nil {
+		return errors.Trace(err)
+	}
 
 	// commit phase
 	commitTS, err := c.store.getTimestampWithRetry(NewBackoffer(ctx, tsoMaxBackoff).WithVars(c.txn.vars))
@@ -564,7 +660,10 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) (err error) {
 	// If there is an error returned by commit operation, you should check if there is an undetermined error before return it.
 	// Undetermined error should be returned if exists, and the database connection will be closed.
 	// YOUR CODE HERE (lab3).
-	panic("YOUR CODE HERE")
+	err = c.commitKeys(commitBo, c.keys)
+	if err != nil {
+		return errors.Trace(err)
+	}
 	return nil
 }
 
