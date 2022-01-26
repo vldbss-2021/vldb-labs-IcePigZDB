@@ -85,7 +85,7 @@ func (e *SimpleExec) executeBegin(ctx context.Context, s *ast.BeginStmt) error {
 		var err error
 		// Hint: step I.5.1
 		// YOUR CODE HERE (lab4)
-		panic("YOUR CODE HERE")
+		err = e.ctx.NewTxn(ctx)
 		if err != nil {
 			return err
 		}
@@ -98,14 +98,30 @@ func (e *SimpleExec) executeBegin(ctx context.Context, s *ast.BeginStmt) error {
 	var err error
 	// Hint: step I.5.1
 	// YOUR CODE HERE (lab4)
-	panic("YOUR CODE HERE")
+	// TODO hot to cheat return s.txn how
+	_, err = e.ctx.Txn(true)
 	return err
 }
 
 func (e *SimpleExec) executeCommit(s *ast.CommitStmt) {
 	// Hint: step I.5.2
 	// YOUR CODE HERE (lab4)
-	panic("YOUR CODE HERE")
+	sessVars := e.ctx.GetSessionVars()
+	logutil.BgLogger().Debug("execute commit statement", zap.Uint64("conn", sessVars.ConnectionID))
+	sessVars.SetStatusFlag(mysql.ServerStatusInTrans, false)
+	// TODO remove below
+	// var (
+	// 	txn kv.Transaction
+	// 	err error
+	// )
+	// txn, err = e.ctx.Txn(false)
+	// if err != nil {
+	// 	return err
+	// }
+	// if txn.Valid() {
+	// 	sessVars.TxnCtx.ClearDelta()
+	// 	err = txn.Commit()
+	// }
 }
 
 func (e *SimpleExec) executeRollback(s *ast.RollbackStmt) error {
@@ -119,7 +135,7 @@ func (e *SimpleExec) executeRollback(s *ast.RollbackStmt) error {
 
 	// Hint: step I.5.3
 	// YOUR CODE HERE (lab4)
-	panic("YOUR CODE HERE")
+	txn, err = e.ctx.Txn(false)
 	if err != nil {
 		return err
 	}
@@ -127,7 +143,7 @@ func (e *SimpleExec) executeRollback(s *ast.RollbackStmt) error {
 		sessVars.TxnCtx.ClearDelta()
 		// Hint: step I.5.3
 		// YOUR CODE HERE (lab4)
-		panic("YOUR CODE HERE")
+		err = txn.Rollback()
 		return err
 	}
 	return nil
